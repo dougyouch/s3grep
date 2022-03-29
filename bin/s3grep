@@ -1,0 +1,10 @@
+#!/usr/bin/env ruby
+
+require 's3grep'
+
+regex = Regexp.new(ARGV[0])
+s3_url = ARGV[1]
+
+S3Grep::Search.search(s3_url, Aws::S3::Client.new).search(regexp) do |line_number, line|
+  puts "#{s3_url}:#{line_number} ${line}"
+end
