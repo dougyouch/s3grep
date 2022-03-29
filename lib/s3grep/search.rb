@@ -1,11 +1,13 @@
+require 'aws-sdk-s3'
+
 module S3Grep
   class Search
     attr_reader :s3_url,
                 :aws_s3_client
 
     def initialize(s3_url, aws_s3_client)
-      self.s3_url = s3_url
-      self.aws_s3_client = aws_s3_client
+      @s3_url = s3_url
+      @aws_s3_client = aws_s3_client
     end
 
     def self.search(s3_url, aws_s3_client, regex, &block)
