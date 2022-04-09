@@ -1,10 +1,50 @@
 #!/usr/bin/env ruby
 
+require 'optparse'
 require 's3grep'
+require 'aws-sdk-s3'
 
-regex = Regexp.new(ARGV[0])
+options = {
+  ignore_case: false,
+  recursive: false,
+  file_pattern: /.*/
+}
+OptionParser.new do |opts|
+  opts.banner = 'Usage: s3grep [options]'
+
+  opts.on('-i', '--ignore-case', 'Ignore case') do
+    options[:ignore_case] = true
+  end
+
+  opts.on('-r', '--recursive', 'Search for file in folder') do
+    options[:recursive] = true
+  end
+
+  opts.on('--include FILE_PATTERN', 'Include matching files') do |v|
+    options[:file_pattern] = Regexp.new(v, Regexp::IGNORECASE)
+  end
+end.parse!
+
+regex_options =
+  if options[:ignore_case]
+    Regexp::IGNORECASE
+  else
+    0
+  end
+
+regex = Regexp.new(ARGV[0], regex_options)
 s3_url = ARGV[1]
 
-S3Grep::Search.search(s3_url, Aws::S3::Client.new, regex) do |line_number, line|
-  puts "#{s3_url}:#{line_number} #{line}"
+aws_s3_client = Aws::S3::Client.new
+
+if options[:recursive]
+  S3Grep::Directory.glob(s3_url, aws_s3_client, options[:file_pattern]) do |s3_file|
+    S3Grep::Search.search(s3_file, aws_s3_client, regex) do |line_number, line|
+      puts "#{s3_file}:#{line_number} #{line}"
+    end
+  end
+else
+  S3Grep::Search.search(s3_url, aws_s3_client, regex) do |line_number, line|
+    puts "#{s3_url}:#{line_number} #{line}"
+  end
 end
