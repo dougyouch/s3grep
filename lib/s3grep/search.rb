@@ -51,7 +51,7 @@ module S3Grep
       if compression == :gzip
         Zlib::GzipReader.new(body)
       elsif compression == :zip
-        require 'rubyzip'
+        require 'zip'
         zip = Zip::File.open_buffer(body)
         zip.entries.first.get_input_stream
       else
