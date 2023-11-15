@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |s|
   s.name        = 's3grep'
-  s.version     = '0.1.4'
+  s.version     = '0.1.5'
   s.licenses    = ['MIT']
   s.summary     = 'Search through S3 files'
   s.description = 'Tools for searching files on S3'

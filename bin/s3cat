@@ -7,4 +7,6 @@ require 'aws-sdk-s3'
 s3_file = ARGV[0]
 aws_s3_client = Aws::S3::Client.new
 search = S3Grep::Search.new(s3_file, aws_s3_client, nil)
-print search.to_io.read
+search.to_io.each do |line|
+  print line
+end
