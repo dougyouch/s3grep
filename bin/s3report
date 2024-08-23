@@ -9,8 +9,18 @@ bucket_info = {}
 aws_s3_client = Aws::S3::Client.new
 aws_s3_client.list_buckets[:buckets].each do |bucket|
   name = bucket[:name]
-  s3_file = "s3://#{name}/"
-  info = S3Grep::Directory.new(s3_file, aws_s3_client).info 
+  puts name
+
+  bucket_location = aws_s3_client.get_bucket_location(bucket: name)
+  aws_s3_client_region_specific =
+    if bucket_location[:location_constraint] == ''
+      aws_s3_client
+    else
+      Aws::S3::Client.new(region: bucket_location[:location_constraint])
+    end
+
+  info = S3Grep::Directory.new("s3://#{name}/", aws_s3_client_region_specific).info
+
   bucket_info[name] = {
     bucket: info.bucket,
     creation_date: bucket[:creation_date],
