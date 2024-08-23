@@ -1,7 +1,5 @@
 #!/usr/bin/env ruby
 
-$LOAD_PATH << "lib"
-
 require 'optparse'
 require 's3grep'
 require 'aws-sdk-s3'

@@ -1,0 +1,48 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 's3grep'
+require 'aws-sdk-s3'
+require 'csv'
+
+bucket_info = {}
+aws_s3_client = Aws::S3::Client.new
+aws_s3_client.list_buckets[:buckets].each do |bucket|
+  name = bucket[:name]
+  s3_file = "s3://#{name}/"
+  info = S3Grep::Directory.new(s3_file, aws_s3_client).info 
+  bucket_info[name] = {
+    bucket: info.bucket,
+    creation_date: bucket[:creation_date],
+    total_size: info.total_size,
+    num_files: info.num_files,
+    last_modified: info.last_modified,
+    newest_file: info.newest_file,
+    first_modified: info.first_modified,
+    first_file: info.first_file
+  }
+
+  break
+end
+
+csv_headers = {
+  bucket: 'Bucket',
+  creation_date: 'Creation Date',
+  total_size: 'Total Size',
+  num_files: 'Number of Files',
+  last_modified: 'Last Modified',
+  newest_file: 'Newest File',
+  first_modified: 'First Modified',
+  first_file: 'First File'
+}
+
+file = "AWS-S3-Usage-Report-#{Time.now.strftime('%Y-%m-%dT%H%M%S')}.csv"
+CSV.open(file, 'w') do |csv|
+  csv << csv_headers.values
+
+  bucket_info.each_value do |stats|
+    csv << csv_headers.keys.map { |k| stats[k] }
+  end
+end
+
+puts file
