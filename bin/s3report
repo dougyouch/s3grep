@@ -21,8 +21,6 @@ aws_s3_client.list_buckets[:buckets].each do |bucket|
     first_modified: info.first_modified,
     first_file: info.first_file
   }
-
-  break
 end
 
 csv_headers = {
