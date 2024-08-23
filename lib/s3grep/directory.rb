@@ -25,6 +25,12 @@ module S3Grep
     end
 
     def each
+      each_content do |content|
+        yield('s3://' + uri.host + '/' + escape_path(content.key))
+      end
+    end
+
+    def each_content
       uri = URI(s3_url)
 
       max_keys = 1_000
@@ -40,7 +46,7 @@ module S3Grep
       )
 
       resp.contents.each do |content|
-        yield('s3://' + uri.host + '/' + escape_path(content.key))
+        yield(content)
       end
 
       while resp.contents.size == max_keys
@@ -56,13 +62,17 @@ module S3Grep
         )
 
         resp.contents.each do |content|
-          yield('s3://' + uri.host + '/' + escape_path(content.key))
+          yield(content)
         end
       end
     end
 
     def escape_path(s3_path)
       s3_path.split('/').map { |part| CGI.escape(part) }.join('/')
+    end
+
+    def info
+      ::S3Grep::DirectoryInfo.get(self)
     end
   end
 end

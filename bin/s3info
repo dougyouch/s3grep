@@ -1,0 +1,25 @@
+#!/usr/bin/env ruby
+
+$LOAD_PATH << "lib"
+
+require 'optparse'
+require 's3grep'
+require 'aws-sdk-s3'
+require 'json'
+
+s3_file = ARGV[0]
+aws_s3_client = Aws::S3::Client.new
+info = S3Grep::Directory.new(s3_file, aws_s3_client).info
+
+stats = {
+  bucket: info.bucket,
+  base_prefix: info.base_prefix,
+  total_size: info.total_size,
+  num_files: info.num_files,
+  last_modified: info.last_modified,
+  newest_file: info.newest_file,
+  first_modified: info.first_modified,
+  first_file: info.first_file
+}
+
+print JSON.pretty_generate(stats) + "\n"
