@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
 
+require 'pathname'
+BASE_DIR = Pathname.new(File.expand_path('..', __dir__))
+$LOAD_PATH << "#{BASE_DIR}/lib"
+
 require 'optparse'
 require 's3grep'
 require 'aws-sdk-s3'
@@ -17,7 +21,9 @@ stats = {
   last_modified: info.last_modified,
   newest_file: info.newest_file,
   first_modified: info.first_modified,
-  first_file: info.first_file
+  first_file: info.first_file,
+  num_files_by_storage_class: info.num_files_by_storage_class,
+  total_size_by_storage_class: info.total_size_by_storage_class
 }
 
 print JSON.pretty_generate(stats) + "\n"

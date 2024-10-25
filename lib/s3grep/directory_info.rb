@@ -5,7 +5,9 @@ module S3Grep
                 :total_size,
                 :num_files,
                 :newest_content,
-                :oldest_content
+                :oldest_content,
+                :num_files_by_storage_class,
+                :total_size_by_storage_class
 
     def self.get(directory)
       info = new(directory)
@@ -15,6 +17,8 @@ module S3Grep
     def initialize(directory)
       @total_size = 0
       @num_files = 0
+      @num_files_by_storage_class = Hash.new(0)
+      @total_size_by_storage_class = Hash.new(0)
       set_path(directory)
     end
 
@@ -22,6 +26,9 @@ module S3Grep
       directory.each_content do |content|
         @num_files += 1
         @total_size += content[:size]
+
+        @num_files_by_storage_class[content[:storage_class]] += 1
+        @total_size_by_storage_class[content[:storage_class]] += content[:size]
 
         set_newest(content)
         set_oldest(content)
