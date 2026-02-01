@@ -57,7 +57,8 @@ regex_options = options[:ignore_case] ? Regexp::IGNORECASE : 0
 regex = safe_regexp(pattern, regex_options)
 
 begin
-  aws_s3_client = Aws::S3::Client.new
+  # max_attempts: 1 disables retries (required for streaming)
+  aws_s3_client = Aws::S3::Client.new(max_attempts: 1)
 
   if options[:recursive]
     S3Grep::Directory.glob(s3_url, aws_s3_client, options[:file_pattern]) do |s3_file|

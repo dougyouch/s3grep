@@ -25,14 +25,6 @@ module S3Grep
       nil
     end
 
-    # Create a non-retrying client for streaming operations
-    # Retries are incompatible with streaming because chunks can't be replayed
-    def streaming_client
-      @streaming_client ||= Aws::S3::Client.new(
-        retry_limit: 0,
-        region: aws_s3_client.config.region
-      )
-    end
 
     def search(regex)
       line_number = 0
@@ -75,7 +67,7 @@ module S3Grep
     def each_line_raw(&block)
       buffer = "".b
 
-      streaming_client.get_object(bucket: bucket, key: key) do |chunk|
+      aws_s3_client.get_object(bucket: bucket, key: key) do |chunk|
         buffer << chunk
         extract_lines!(buffer, &block)
       end
@@ -92,7 +84,7 @@ module S3Grep
       inflater = Zlib::Inflate.new(Zlib::MAX_WBITS + 32)
 
       begin
-        streaming_client.get_object(bucket: bucket, key: key) do |chunk|
+        aws_s3_client.get_object(bucket: bucket, key: key) do |chunk|
           # Decompress this chunk
           decompressed = inflater.inflate(chunk)
           buffer << decompressed
@@ -117,7 +109,7 @@ module S3Grep
 
       # Stream download into buffer (ZIP format requires full file)
       body = StringIO.new("".b)
-      streaming_client.get_object(bucket: bucket, key: key) do |chunk|
+      aws_s3_client.get_object(bucket: bucket, key: key) do |chunk|
         body << chunk
       end
       body.rewind

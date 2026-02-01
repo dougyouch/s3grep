@@ -16,7 +16,8 @@ unless s3_url.start_with?('s3://')
 end
 
 begin
-  aws_s3_client = Aws::S3::Client.new
+  # max_attempts: 1 disables retries (required for streaming)
+  aws_s3_client = Aws::S3::Client.new(max_attempts: 1)
   search = S3Grep::Search.new(s3_url, aws_s3_client)
   search.to_io.each do |line|
     print line
