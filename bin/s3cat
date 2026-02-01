@@ -17,8 +17,7 @@ end
 
 begin
   aws_s3_client = Aws::S3::Client.new
-  compression = S3Grep::Search.detect_compression(s3_url)
-  search = S3Grep::Search.new(s3_url, aws_s3_client, compression)
+  search = S3Grep::Search.new(s3_url, aws_s3_client)
   search.to_io.each do |line|
     print line
   end

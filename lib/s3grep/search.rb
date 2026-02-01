@@ -14,11 +14,11 @@ module S3Grep
     def initialize(s3_url, aws_s3_client, compression = nil)
       @s3_url = s3_url
       @aws_s3_client = aws_s3_client
-      @compression = compression
+      @compression = compression || self.class.detect_compression(s3_url)
     end
 
     def self.search(s3_url, aws_s3_client, regex, &block)
-      new(s3_url, aws_s3_client, detect_compression(s3_url)).search(regex, &block)
+      new(s3_url, aws_s3_client).search(regex, &block)
     end
 
     def self.detect_compression(s3_url)
@@ -81,33 +81,27 @@ module S3Grep
       yield buffer unless buffer.empty?
     end
 
-    # Stream gzip content line by line using Zlib::Inflate
+    # Stream gzip content using GzipReader with a streaming IO adapter
     def each_line_gzip(&block)
-      buffer = "".b
-      bytes_processed = 0
-      # Zlib::MAX_WBITS + 16 enables gzip format detection
-      inflater = Zlib::Inflate.new(Zlib::MAX_WBITS + 16)
+      stream_io = S3StreamIO.new(aws_s3_client, bucket, key, MAX_BYTES_PROCESSED)
 
       begin
-        aws_s3_client.get_object(bucket: bucket, key: key) do |chunk|
-          decompressed = inflater.inflate(chunk)
-          bytes_processed += decompressed.bytesize
-          check_size_limit!(bytes_processed)
+        gzip_reader = Zlib::GzipReader.new(stream_io)
+        buffer = "".b
+        bytes_decompressed = 0
 
-          buffer << decompressed
+        # Read in chunks and extract lines
+        while (chunk = gzip_reader.read(65536))
+          bytes_decompressed += chunk.bytesize
+          check_size_limit!(bytes_decompressed)
+
+          buffer << chunk
           extract_lines!(buffer, &block)
         end
 
-        # Finish decompression and process remaining data
-        remaining = inflater.finish
-        bytes_processed += remaining.bytesize
-        check_size_limit!(bytes_processed)
-        buffer << remaining
-        extract_lines!(buffer, &block)
-
         yield buffer unless buffer.empty?
       ensure
-        inflater.close
+        gzip_reader&.close
       end
     end
 
@@ -157,6 +151,77 @@ module S3Grep
       if bytes > MAX_BYTES_PROCESSED
         raise IOError, "Data exceeds maximum size limit (#{MAX_BYTES_PROCESSED} bytes). " \
                        "Set S3Grep::Search::MAX_BYTES_PROCESSED to increase."
+      end
+    end
+
+    # IO adapter that streams S3 content for use with GzipReader
+    # Buffers S3 chunks and serves them via the read method
+    class S3StreamIO
+      def initialize(aws_s3_client, bucket, key, max_bytes)
+        @aws_s3_client = aws_s3_client
+        @bucket = bucket
+        @key = key
+        @max_bytes = max_bytes
+        @buffer = "".b
+        @eof = false
+        @bytes_read = 0
+        @chunk_enum = nil
+      end
+
+      def read(length = nil, outbuf = nil)
+        outbuf = outbuf ? outbuf.replace("".b) : "".b
+
+        if length.nil?
+          # Read all remaining data
+          fill_buffer_fully
+          outbuf << @buffer
+          @buffer = "".b
+          return outbuf.empty? ? nil : outbuf
+        end
+
+        # Read specified number of bytes
+        while @buffer.bytesize < length && !@eof
+          fetch_next_chunk
+        end
+
+        if @buffer.empty?
+          return nil
+        end
+
+        data = @buffer.slice!(0, length)
+        outbuf << data
+        outbuf
+      end
+
+      private
+
+      def chunk_enumerator
+        @chunk_enum ||= Enumerator.new do |yielder|
+          @aws_s3_client.get_object(bucket: @bucket, key: @key) do |chunk|
+            yielder << chunk
+          end
+        end
+      end
+
+      def fetch_next_chunk
+        return if @eof
+
+        begin
+          chunk = chunk_enumerator.next
+          @bytes_read += chunk.bytesize
+          if @bytes_read > @max_bytes
+            raise IOError, "Compressed data exceeds maximum size limit (#{@max_bytes} bytes)."
+          end
+          @buffer << chunk
+        rescue StopIteration
+          @eof = true
+        end
+      end
+
+      def fill_buffer_fully
+        until @eof
+          fetch_next_chunk
+        end
       end
     end
 
