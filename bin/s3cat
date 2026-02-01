@@ -1,12 +1,31 @@
 #!/usr/bin/env ruby
 
-require 'optparse'
 require 's3grep'
 require 'aws-sdk-s3'
 
-s3_file = ARGV[0]
-aws_s3_client = Aws::S3::Client.new
-search = S3Grep::Search.new(s3_file, aws_s3_client, nil)
-search.to_io.each do |line|
-  print line
+s3_url = ARGV[0]
+
+if s3_url.nil? || s3_url.empty?
+  $stderr.puts "Usage: s3cat s3://bucket/path/to/file"
+  exit 1
+end
+
+unless s3_url.start_with?('s3://')
+  $stderr.puts "Error: Invalid S3 URL format. Expected s3://bucket/path"
+  exit 1
+end
+
+begin
+  aws_s3_client = Aws::S3::Client.new
+  compression = S3Grep::Search.detect_compression(s3_url)
+  search = S3Grep::Search.new(s3_url, aws_s3_client, compression)
+  search.to_io.each do |line|
+    print line
+  end
+rescue Aws::S3::Errors::ServiceError => e
+  $stderr.puts "S3 Error: #{e.message}"
+  exit 1
+rescue => e
+  $stderr.puts "Error: #{e.message}"
+  exit 1
 end

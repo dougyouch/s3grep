@@ -1,56 +1,82 @@
 #!/usr/bin/env ruby
 
-require 'optparse'
 require 's3grep'
 require 'aws-sdk-s3'
 require 'csv'
 
-bucket_info = {}
-aws_s3_client = Aws::S3::Client.new
-aws_s3_client.list_buckets[:buckets].each do |bucket|
-  name = bucket[:name]
-  puts name
+# Sanitize values to prevent CSV injection attacks
+# Prefixes dangerous characters with a single quote
+def sanitize_csv_value(value)
+  return value unless value.is_a?(String)
+  return value if value.empty?
 
-  bucket_location = aws_s3_client.get_bucket_location(bucket: name)
-  aws_s3_client_region_specific =
-    if bucket_location[:location_constraint] == ''
-      aws_s3_client
-    else
-      Aws::S3::Client.new(region: bucket_location[:location_constraint])
-    end
-
-  info = S3Grep::Directory.new("s3://#{name}/", aws_s3_client_region_specific).info
-
-  bucket_info[name] = {
-    bucket: info.bucket,
-    creation_date: bucket[:creation_date],
-    total_size: info.total_size,
-    num_files: info.num_files,
-    last_modified: info.last_modified,
-    newest_file: info.newest_file,
-    first_modified: info.first_modified,
-    first_file: info.first_file
-  }
-end
-
-csv_headers = {
-  bucket: 'Bucket',
-  creation_date: 'Creation Date',
-  total_size: 'Total Size',
-  num_files: 'Number of Files',
-  last_modified: 'Last Modified',
-  newest_file: 'Newest File',
-  first_modified: 'First Modified',
-  first_file: 'First File'
-}
-
-file = "AWS-S3-Usage-Report-#{Time.now.strftime('%Y-%m-%dT%H%M%S')}.csv"
-CSV.open(file, 'w') do |csv|
-  csv << csv_headers.values
-
-  bucket_info.each_value do |stats|
-    csv << csv_headers.keys.map { |k| stats[k] }
+  # Characters that can trigger formula execution in spreadsheets
+  if %w[= + - @ \t \r].include?(value[0])
+    "'#{value}"
+  else
+    value
   end
 end
 
-puts file
+begin
+  bucket_info = {}
+  aws_s3_client = Aws::S3::Client.new
+
+  aws_s3_client.list_buckets[:buckets].each do |bucket|
+    name = bucket[:name]
+    puts name
+
+    begin
+      bucket_location = aws_s3_client.get_bucket_location(bucket: name)
+      aws_s3_client_region_specific =
+        if bucket_location[:location_constraint].nil? || bucket_location[:location_constraint] == ''
+          aws_s3_client
+        else
+          Aws::S3::Client.new(region: bucket_location[:location_constraint])
+        end
+
+      info = S3Grep::Directory.new("s3://#{name}/", aws_s3_client_region_specific).info
+
+      bucket_info[name] = {
+        bucket: info.bucket,
+        creation_date: bucket[:creation_date],
+        total_size: info.total_size,
+        num_files: info.num_files,
+        last_modified: info.last_modified,
+        newest_file: info.newest_file,
+        first_modified: info.first_modified,
+        first_file: info.first_file
+      }
+    rescue Aws::S3::Errors::ServiceError => e
+      $stderr.puts "Warning: Could not access bucket '#{name}': #{e.message}"
+    end
+  end
+
+  csv_headers = {
+    bucket: 'Bucket',
+    creation_date: 'Creation Date',
+    total_size: 'Total Size',
+    num_files: 'Number of Files',
+    last_modified: 'Last Modified',
+    newest_file: 'Newest File',
+    first_modified: 'First Modified',
+    first_file: 'First File'
+  }
+
+  file = "AWS-S3-Usage-Report-#{Time.now.strftime('%Y-%m-%dT%H%M%S')}.csv"
+  CSV.open(file, 'w') do |csv|
+    csv << csv_headers.values
+
+    bucket_info.each_value do |stats|
+      csv << csv_headers.keys.map { |k| sanitize_csv_value(stats[k]) }
+    end
+  end
+
+  puts file
+rescue Aws::S3::Errors::ServiceError => e
+  $stderr.puts "S3 Error: #{e.message}"
+  exit 1
+rescue => e
+  $stderr.puts "Error: #{e.message}"
+  exit 1
+end

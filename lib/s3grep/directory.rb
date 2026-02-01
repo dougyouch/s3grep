@@ -12,6 +12,10 @@ module S3Grep
       @aws_s3_client = aws_s3_client
     end
 
+    def uri
+      @uri ||= URI(s3_url)
+    end
+
     def self.glob(s3_url, aws_s3_client, regex, &block)
       new(s3_url, aws_s3_client).glob(regex, &block)
     end
@@ -31,18 +35,14 @@ module S3Grep
     end
 
     def each_content
-      uri = URI(s3_url)
-
       max_keys = 1_000
 
       prefix = CGI.unescape(uri.path[1..-1] || '')
 
       resp = aws_s3_client.list_objects(
-        {
-          bucket: uri.host,
-          prefix: prefix,
-          max_keys: max_keys
-        }
+        bucket: uri.host,
+        prefix: prefix,
+        max_keys: max_keys
       )
 
       resp.contents.each do |content|
@@ -53,12 +53,10 @@ module S3Grep
         marker = resp.contents.last.key
 
         resp = aws_s3_client.list_objects(
-          {
-            bucket: uri.host,
-            prefix: prefix,
-            max_keys: max_keys,
-            marker: marker
-          }
+          bucket: uri.host,
+          prefix: prefix,
+          max_keys: max_keys,
+          marker: marker
         )
 
         resp.contents.each do |content|

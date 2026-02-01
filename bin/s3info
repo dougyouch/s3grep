@@ -4,26 +4,44 @@ require 'pathname'
 BASE_DIR = Pathname.new(File.expand_path('..', __dir__))
 $LOAD_PATH << "#{BASE_DIR}/lib"
 
-require 'optparse'
 require 's3grep'
 require 'aws-sdk-s3'
 require 'json'
 
-s3_file = ARGV[0]
-aws_s3_client = Aws::S3::Client.new
-info = S3Grep::Directory.new(s3_file, aws_s3_client).info
+s3_url = ARGV[0]
 
-stats = {
-  bucket: info.bucket,
-  base_prefix: info.base_prefix,
-  total_size: info.total_size,
-  num_files: info.num_files,
-  last_modified: info.last_modified,
-  newest_file: info.newest_file,
-  first_modified: info.first_modified,
-  first_file: info.first_file,
-  num_files_by_storage_class: info.num_files_by_storage_class,
-  total_size_by_storage_class: info.total_size_by_storage_class
-}
+if s3_url.nil? || s3_url.empty?
+  $stderr.puts "Usage: s3info s3://bucket/path"
+  exit 1
+end
 
-print JSON.pretty_generate(stats) + "\n"
+unless s3_url.start_with?('s3://')
+  $stderr.puts "Error: Invalid S3 URL format. Expected s3://bucket/path"
+  exit 1
+end
+
+begin
+  aws_s3_client = Aws::S3::Client.new
+  info = S3Grep::Directory.new(s3_url, aws_s3_client).info
+
+  stats = {
+    bucket: info.bucket,
+    base_prefix: info.base_prefix,
+    total_size: info.total_size,
+    num_files: info.num_files,
+    last_modified: info.last_modified,
+    newest_file: info.newest_file,
+    first_modified: info.first_modified,
+    first_file: info.first_file,
+    num_files_by_storage_class: info.num_files_by_storage_class,
+    total_size_by_storage_class: info.total_size_by_storage_class
+  }
+
+  print JSON.pretty_generate(stats) + "\n"
+rescue Aws::S3::Errors::ServiceError => e
+  $stderr.puts "S3 Error: #{e.message}"
+  exit 1
+rescue => e
+  $stderr.puts "Error: #{e.message}"
+  exit 1
+end

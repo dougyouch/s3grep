@@ -1,3 +1,5 @@
+require 'cgi'
+
 module S3Grep
   class DirectoryInfo
     attr_reader :bucket,

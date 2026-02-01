@@ -4,13 +4,28 @@ require 'optparse'
 require 's3grep'
 require 'aws-sdk-s3'
 
+# Maximum regex pattern length to prevent ReDoS
+MAX_PATTERN_LENGTH = 1000
+
+def safe_regexp(pattern, options = 0)
+  if pattern.length > MAX_PATTERN_LENGTH
+    $stderr.puts "Error: Pattern too long (max #{MAX_PATTERN_LENGTH} characters)"
+    exit 1
+  end
+  Regexp.new(pattern, options)
+rescue RegexpError => e
+  $stderr.puts "Error: Invalid regular expression: #{e.message}"
+  exit 1
+end
+
 options = {
   ignore_case: false,
   recursive: false,
   file_pattern: /.*/
 }
+
 OptionParser.new do |opts|
-  opts.banner = 'Usage: s3grep [options]'
+  opts.banner = 'Usage: s3grep [options] PATTERN s3://bucket/path'
 
   opts.on('-i', '--ignore-case', 'Ignore case') do
     options[:ignore_case] = true
@@ -21,30 +36,44 @@ OptionParser.new do |opts|
   end
 
   opts.on('--include FILE_PATTERN', 'Include matching files') do |v|
-    options[:file_pattern] = Regexp.new(v, Regexp::IGNORECASE)
+    options[:file_pattern] = safe_regexp(v, Regexp::IGNORECASE)
   end
 end.parse!
 
-regex_options =
-  if options[:ignore_case]
-    Regexp::IGNORECASE
-  else
-    0
-  end
+if ARGV.length < 2
+  $stderr.puts "Usage: s3grep [options] PATTERN s3://bucket/path"
+  exit 1
+end
 
-regex = Regexp.new(ARGV[0], regex_options)
+pattern = ARGV[0]
 s3_url = ARGV[1]
 
-aws_s3_client = Aws::S3::Client.new
+unless s3_url.start_with?('s3://')
+  $stderr.puts "Error: Invalid S3 URL format. Expected s3://bucket/path"
+  exit 1
+end
 
-if options[:recursive]
-  S3Grep::Directory.glob(s3_url, aws_s3_client, options[:file_pattern]) do |s3_file|
-    S3Grep::Search.search(s3_file, aws_s3_client, regex) do |line_number, line|
-      puts "#{s3_file}:#{line_number} #{line}"
+regex_options = options[:ignore_case] ? Regexp::IGNORECASE : 0
+regex = safe_regexp(pattern, regex_options)
+
+begin
+  aws_s3_client = Aws::S3::Client.new
+
+  if options[:recursive]
+    S3Grep::Directory.glob(s3_url, aws_s3_client, options[:file_pattern]) do |s3_file|
+      S3Grep::Search.search(s3_file, aws_s3_client, regex) do |line_number, line|
+        puts "#{s3_file}:#{line_number} #{line}"
+      end
+    end
+  else
+    S3Grep::Search.search(s3_url, aws_s3_client, regex) do |line_number, line|
+      puts "#{s3_url}:#{line_number} #{line}"
     end
   end
-else
-  S3Grep::Search.search(s3_url, aws_s3_client, regex) do |line_number, line|
-    puts "#{s3_url}:#{line_number} #{line}"
-  end
+rescue Aws::S3::Errors::ServiceError => e
+  $stderr.puts "S3 Error: #{e.message}"
+  exit 1
+rescue => e
+  $stderr.puts "Error: #{e.message}"
+  exit 1
 end

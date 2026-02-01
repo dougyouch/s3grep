@@ -14,4 +14,5 @@ Gem::Specification.new do |s|
   s.executables = s.files.grep(%r{^bin/}) { |f| File.basename(f) }
 
   s.add_runtime_dependency 'aws-sdk-s3'
+  s.add_runtime_dependency 'rubyzip'
 end
