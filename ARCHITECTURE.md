@@ -33,18 +33,26 @@ s3grep is a Ruby gem providing grep-like functionality for AWS S3 objects. It st
 
 ### S3Grep::Search
 
-Streams an S3 object and performs line-by-line regex matching.
+True streaming S3 object reader with line-by-line regex matching. Uses chunked transfer to avoid loading entire files into memory.
 
 **Responsibilities:**
 - Parse S3 URL to extract bucket and key
-- Stream object content via `get_object`
-- Auto-detect and decompress .gz and .zip files
+- Stream object content via `get_object` block form (chunked transfer)
+- Buffer partial lines across chunk boundaries
+- Auto-detect and decompress .gz files (streaming) and .zip files (buffered)
 - Yield matching lines with line numbers
+- Enforce size limits to prevent resource exhaustion
 
 **Key Methods:**
 - `Search.search(s3_url, client, regex)` - Class method for simple searches
 - `Search.detect_compression(s3_url)` - Infers compression from file extension
-- `#to_io` - Returns readable IO (decompressed if needed)
+- `#each_line` - Core streaming iterator, yields lines as they arrive
+- `#to_io` - Returns StreamingIO adapter for backward compatibility
+
+**Streaming Implementation:**
+- Raw files: Chunks streamed directly, lines extracted from buffer
+- Gzip files: Chunks decompressed via `Zlib::Inflate` as they arrive
+- ZIP files: Must buffer entire archive (ZIP format requires central directory at EOF)
 
 ### S3Grep::Directory
 
@@ -95,25 +103,34 @@ User Input: regex + s3://bucket/key
 └──────────┬───────────┘
            │
            ▼
-┌──────────────────────┐
-│ aws_s3_client        │
-│   .get_object()      │
-└──────────┬───────────┘
+┌──────────────────────────────────────┐
+│ aws_s3_client.get_object(block form) │
+│   Streams chunks as they arrive      │
+└──────────┬───────────────────────────┘
+           │
+           ▼ (for each chunk)
+┌──────────────────────────────────────┐
+│ Decompress chunk if gzip             │
+│ (Zlib::Inflate streaming)            │
+└──────────┬───────────────────────────┘
            │
            ▼
-┌──────────────────────┐
-│ Wrap in GzipReader   │
-│ or Zip::File if      │
-│ compressed           │
-└──────────┬───────────┘
+┌──────────────────────────────────────┐
+│ Append to line buffer                │
+│ Extract complete lines               │
+│ Yield matches with line numbers      │
+└──────────┬───────────────────────────┘
            │
            ▼
-┌──────────────────────┐
-│ Stream lines,        │
-│ yield matches with   │
-│ line numbers         │
-└──────────────────────┘
+┌──────────────────────────────────────┐
+│ Repeat until stream exhausted        │
+│ Yield final partial line if any      │
+└──────────────────────────────────────┘
 ```
+
+**Memory Behavior:**
+- Raw/Gzip: Only current chunk + line buffer in memory (~64KB typical)
+- ZIP: Entire archive buffered (ZIP format limitation)
 
 ### Directory Listing Flow (s3info, recursive s3grep)
 
@@ -160,8 +177,12 @@ All tools expect: `s3://bucket-name/path/to/prefix`
 
 ## Compression Support
 
-| Extension | Library | Notes |
-|-----------|---------|-------|
-| `.gz` | zlib (stdlib) | GzipReader wraps body IO |
-| `.zip` | rubyzip | Reads first entry only |
-| (none) | - | Raw body IO |
+| Extension | Library | Streaming | Notes |
+|-----------|---------|-----------|-------|
+| `.gz` | zlib (stdlib) | ✅ Yes | Zlib::Inflate processes chunks as they arrive |
+| `.zip` | rubyzip | ❌ No | ZIP format requires buffering (central directory at EOF) |
+| (none) | - | ✅ Yes | Chunks streamed directly |
+
+**Size Limits:**
+- `MAX_BYTES_PROCESSED` (100MB default) prevents resource exhaustion
+- Configurable via `S3Grep::Search::MAX_BYTES_PROCESSED`
