@@ -70,6 +70,9 @@ begin
       puts "#{s3_url}:#{line_number} #{line}"
     end
   end
+rescue Errno::EPIPE
+  # Broken pipe (e.g., piping to head) - exit silently
+  exit 0
 rescue Aws::S3::Errors::ServiceError => e
   $stderr.puts "S3 Error: #{e.message}"
   exit 1
