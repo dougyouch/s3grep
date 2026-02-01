@@ -3,6 +3,9 @@
 require 's3grep'
 require 'aws-sdk-s3'
 
+# Exit cleanly on broken pipe (e.g., when piping to head)
+Signal.trap("PIPE", "EXIT")
+
 s3_url = ARGV[0]
 
 if s3_url.nil? || s3_url.empty?

@@ -4,6 +4,9 @@ require 'optparse'
 require 's3grep'
 require 'aws-sdk-s3'
 
+# Exit cleanly on broken pipe (e.g., when piping to head)
+Signal.trap("PIPE", "EXIT")
+
 # Maximum regex pattern length to prevent ReDoS
 MAX_PATTERN_LENGTH = 1000
 
