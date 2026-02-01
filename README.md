@@ -123,6 +123,12 @@ Authentication uses the standard AWS SDK credential chain:
 
 Set your region via `AWS_REGION` environment variable or `~/.aws/config`.
 
+Use `AWS_PROFILE` to select a named profile:
+
+```bash
+AWS_PROFILE=stage s3grep "error" s3://my-bucket/logs/app.log
+```
+
 ## License
 
 MIT
