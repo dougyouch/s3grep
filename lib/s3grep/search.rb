@@ -81,26 +81,19 @@ module S3Grep
       yield buffer unless buffer.empty?
     end
 
-    # Stream gzip content using GzipReader
-    # Note: We buffer the compressed data (streamed from S3) then decompress
-    # This is necessary because GzipReader needs a seekable IO for some operations
+    # Decompress gzip content using GzipReader
+    # Downloads compressed data first (allows SDK retries), then decompresses
     def each_line_gzip(&block)
-      # Buffer compressed data from S3 (streaming download)
-      compressed_io = StringIO.new("".b)
-      bytes_downloaded = 0
+      # Download compressed data (non-streaming allows SDK retries)
+      response = aws_s3_client.get_object(bucket: bucket, key: key)
+      compressed_io = response.body
 
-      aws_s3_client.get_object(bucket: bucket, key: key) do |chunk|
-        bytes_downloaded += chunk.bytesize
-        # Check compressed size - a reasonable limit for compressed data
-        if bytes_downloaded > MAX_BYTES_PROCESSED
-          raise IOError, "Compressed data exceeds maximum size limit (#{MAX_BYTES_PROCESSED} bytes)."
-        end
-        compressed_io << chunk
+      # Check compressed size
+      if compressed_io.size > MAX_BYTES_PROCESSED
+        raise IOError, "Compressed data exceeds maximum size limit (#{MAX_BYTES_PROCESSED} bytes)."
       end
 
-      compressed_io.rewind
-
-      # Now decompress and process line by line
+      # Decompress and process line by line
       gzip_reader = Zlib::GzipReader.new(compressed_io)
       buffer = "".b
       bytes_decompressed = 0
@@ -121,21 +114,17 @@ module S3Grep
     end
 
     # ZIP files cannot be truly streamed (need central directory at EOF)
-    # Fall back to buffered mode with size limit check
     def each_line_zip(&block)
       require 'zip'
 
-      # For ZIP, we must buffer the entire file to access the archive
-      body = StringIO.new("".b)
-      bytes_downloaded = 0
+      # Download ZIP file (non-streaming allows SDK retries)
+      response = aws_s3_client.get_object(bucket: bucket, key: key)
+      body = response.body
 
-      aws_s3_client.get_object(bucket: bucket, key: key) do |chunk|
-        bytes_downloaded += chunk.bytesize
-        check_size_limit!(bytes_downloaded)
-        body << chunk
+      if body.size > MAX_BYTES_PROCESSED
+        raise IOError, "ZIP file exceeds maximum size limit (#{MAX_BYTES_PROCESSED} bytes)."
       end
 
-      body.rewind
       zip = Zip::File.open_buffer(body)
       entry = zip.entries.first
       raise IOError, "ZIP archive is empty" if entry.nil?
