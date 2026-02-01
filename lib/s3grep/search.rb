@@ -64,21 +64,19 @@ module S3Grep
 
     private
 
-    # Stream raw (uncompressed) content line by line
+    # Read raw (uncompressed) content line by line
     def each_line_raw(&block)
-      buffer = "".b
-      bytes_processed = 0
+      response = aws_s3_client.get_object(bucket: bucket, key: key)
+      body = response.body
 
-      aws_s3_client.get_object(bucket: bucket, key: key) do |chunk|
-        bytes_processed += chunk.bytesize
-        check_size_limit!(bytes_processed)
-
-        buffer << chunk
-        extract_lines!(buffer, &block)
+      if body.size > MAX_BYTES_PROCESSED
+        raise IOError, "File exceeds maximum size limit (#{MAX_BYTES_PROCESSED} bytes)."
       end
 
-      # Yield any remaining content (last line without newline)
-      yield buffer unless buffer.empty?
+      # Process line by line from the response body
+      body.each_line do |line|
+        yield line
+      end
     end
 
     # Decompress gzip content using GzipReader
